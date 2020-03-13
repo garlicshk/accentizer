@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/accentizer.iml" filepath="$PROJECT_DIR$/.idea/accentizer.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../text-tools/.idea/text-tools.iml" filepath="$PROJECT_DIR$/../text-tools/.idea/text-tools.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../untitled/.idea/untitled.iml" filepath="$PROJECT_DIR$/../untitled/.idea/untitled.iml" />
+    </modules>
+  </component>
+</project>
