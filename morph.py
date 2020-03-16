@@ -140,6 +140,10 @@ class OpencorporaTags(BaseTags):
     NUMBER = ('sing', 'plur')
     DEGREE = ()
 
+    def __init__(self):
+        BaseTags.__init__(self)
+        self.pos_grammeme = None
+
     def from_variant(self, variant):
         super().from_variant(variant)
         if 'pos-grammeme' in variant:
@@ -147,6 +151,7 @@ class OpencorporaTags(BaseTags):
             self.pos_grammeme = variant['pos-grammeme']
 
     def __str__(self):
-        return self.pos + ',' + self.pos_grammeme + ' ' + '|'.join(['='.join(x) for x in self.tags.items()])
+        return (self.pos if self.pos_grammeme is None else self.pos + ',' + self.pos_grammeme)\
+               + ' ' + '|'.join(['='.join(x) for x in self.tags.items()])
 
 
