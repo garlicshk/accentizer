@@ -120,7 +120,7 @@ class UniversaldependenciesTags(BaseTags):
 
 class OpencorporaTags(BaseTags):
     POS = ('NOUN', 'ADJF', 'ADJS', 'VERB')
-    POS_G = ('Apro')
+    POS_G = ('Apro', 'Qual')
     TAGS = ('Animacy', 'Case', 'Gender', 'Number', 'Degree')
     CASE = ('nomn', 'gent', 'datv', 'accs', 'ablt', 'loct')
     GENDER = ('femn', 'masc', 'neut')
@@ -133,5 +133,8 @@ class OpencorporaTags(BaseTags):
         if 'pos-grammeme' in variant:
             assert variant['pos-grammeme'] in self.POS_G
             self.pos_grammeme = variant['pos-grammeme']
+
+    def __str__(self):
+        return self.pos + ',' + self.pos_grammeme + ' ' + '|'.join(['='.join(x) for x in self.tags.items()])
 
 
