@@ -16,6 +16,9 @@ class Morph:
     def __str__(self):
         return (self.base if self.base is not None else '') + ' ' + str(self.opencorpora_tags)
 
+    def __repr__(self):
+        return (self.base if self.base is not None else '') + ' ' + str(self.opencorpora_tags)
+
     def set_base(self, base):
         assert base is not None
         assert len(base) > 0
