@@ -214,6 +214,117 @@ def get_name_value(argument):
     value = argument.value.strip()
     return name, value if len(value) > 0 else None
 
+
+def get_words_from_text(row):
+    m = re.fullmatch(r'([́а-яёА-ЯЁ]+)', row)
+
+    if m is None:
+        m = re.fullmatch(r'[^<>]*<.+>([́а-яёА-ЯЁ]+)<\/[a-z]+>', row)
+
+    if m is not None:
+        words = [m.group(1)]
+    else:
+        if '—' in row:
+            words = None
+            raise Exception()
+        else:
+            splits = re.split(split_regex, row)
+            splits = [re.search(r'([́а-яёА-ЯЁ.]+)', x).group(1) for x in splits]
+            splits = [x for x in splits if 'устар.' not in x]
+            if len(splits) > 1:
+                words = splits
+            else:
+                if re.match(r'([́а-яёА-ЯЁ]+)', splits[0]):
+                    words = splits
+                else:
+                    raise Exception
+
+    for word in words:
+        assert re.match(r'([́а-яёА-ЯЁ]+)', word)
+
+    words = [x for x in words if 'ё' in x or '́' in x]
+
+    assert words is not None
+    return words
+
+
+def parse_table_declension(table, base, opencorpora_tag, universalD_tag):
+    variants = []
+
+    _header = table.pop(0)
+    assert _header[0].strip() == '[[падеж]]'
+    assert _header[1].strip() == '[[падеж]]'
+    assert _header[2].strip() == '[[единственное число|ед. ч.]]'
+    assert _header[3].strip() == '[[единственное число|ед. ч.]]'
+    assert _header[4].strip() == '[[единственное число|ед. ч.]]'
+    assert _header[5].strip() == '[[множественное число|мн. ч.]]'
+    _header = table.pop(0)
+    assert _header[0].strip() == '[[падеж]]'
+    assert _header[1].strip() == '[[падеж]]'
+    assert 'мужской' in _header[2]
+    assert 'средний' in _header[3]
+    assert 'женский' in _header[4]
+    assert _header[5].strip() == '[[множественное число|мн. ч.]]'
+
+    for row_index, row in enumerate(table):
+        case = re.search(r'\[\[([а-яё. ]+)(\||\]\])', row[0]).group(1)
+        assert case in r_case_opencorpora or 'краткая' in case
+
+        for i in range(4):
+            anim = re.search(r'\[\[([а-яё. ]+)(\||\]\])', row[1]).group(1)
+            assert anim in r_anim_opencorpora or anim in r_case_opencorpora or 'краткая' in case
+
+            # if cell is merged
+            if row_index > 0 and row[0] != row[1] and table[row_index - 1][0] != table[row_index - 1][1] and row[
+                2 + i] == table[row_index - 1][2 + i]:
+                continue
+
+            if row_index < len(table) - 1 and row[0] != row[1] and table[row_index + 1][0] != table[row_index + 1][
+                1] and row[2 + i] == table[row_index + 1][2 + i]:
+                anim = None
+
+            words = get_words_from_text(row[2 + i])
+
+            opencorpora_tag_copy = copy.deepcopy(opencorpora_tag)
+            universalD_tag_copy = copy.deepcopy(universalD_tag)
+
+            if 'краткая' not in case:
+                opencorpora_tag_copy['tag']['Case'] = r_case_opencorpora[case]
+                universalD_tag_copy['tag']['Case'] = r_case_universalD[case]
+            else:
+                opencorpora_tag_copy['pos'] = 'ADJS'
+                universalD_tag_copy['tag']['Variant'] = 'Short'
+            opencorpora_tag_copy['tag']['Number'] = r_number_opencorpora['ед'] if i < 3 else r_number_opencorpora['мн']
+            universalD_tag_copy['tag']['Number'] = r_number_universalD['ед'] if i < 3 else r_number_universalD['мн']
+            if i < 3:
+                genders = {0: 'м', 1: 'с', 2: 'ж'}
+                opencorpora_tag_copy['tag']['Gender'] = r_gender_opencorpora[genders[i]]
+                universalD_tag_copy['tag']['Gender'] = r_gender_universalD[genders[i]]
+
+            if anim in r_anim_opencorpora:
+                opencorpora_tag_copy['tag']['Animacy'] = r_anim_opencorpora[anim]
+                universalD_tag_copy['tag']['Animacy'] = r_anim_univarsalD[anim]
+
+            last_variant = [words, base, opencorpora_tag_copy, universalD_tag_copy]
+            variants.append(last_variant)
+
+    return variants
+
+
+def expand_cases(word_acc, base, opencorpora_tag, universalD_tag):
+    variants = []
+    for case in opencorpora_tag['Case']:
+        opencorpora_tag_copy = copy.deepcopy(opencorpora_tag)
+        universalD_tag_copy = copy.deepcopy(universalD_tag)
+
+        opencorpora_tag_copy['Case'] = case
+        universalD_tag_copy['Case'] = case
+
+        variants.append([word_acc, base, opencorpora_tag_copy, universalD_tag_copy])
+
+    return variants
+
+
 def parse_template(word_acc, template):
     from wiktparser import search_section_for_template, get_word_from_slogi, get_wikitext_api_expandtemplates
 
@@ -224,6 +335,8 @@ def parse_template(word_acc, template):
     opencorpora_tag = {'tag': {}}
     universalD_tag = {'tag': {}}
     base = None
+
+    multiple_cases = False
 
     if template_name == 'Форма-сущ':
         opencorpora_tag['pos'] = 'NOUN'
@@ -283,12 +396,13 @@ def parse_template(word_acc, template):
         for argument in template.arguments:
             name, value = get_name_value(argument)
 
-            if name in ['база', '1'] and value is not None:
+            if name in ['база', '1']:
+                assert value is not None
                 base = value
                 continue
 
             if name in ['время', '2']:
-                if value is None: continue
+                assert value is not None
                 opencorpora_tag['tag']['Tense'] = r_tense_opencorpora.get(value)
                 universalD_tag['tag']['Tense'] = r_tense_universalD.get(value)
                 continue
@@ -296,18 +410,19 @@ def parse_template(word_acc, template):
             if name == 'залог':
                 continue
 
-            if name in ['род', '3']:
-                if value is None: continue
-                opencorpora_tag['tag']['Gender'] = r_gender_opencorpora.get(value)
-                universalD_tag['tag']['Gender'] = r_gender_universalD.get(value)
+            if name in ['род', '3'] and value is not None : # can be empty
+                opencorpora_tag['tag']['Gender'] = r_gender_opencorpora[(value)]
+                universalD_tag['tag']['Gender'] = r_gender_universalD[(value)]
                 continue
 
             if name in ['лицо', '4']:
+                assert value in r_person_opencorpora
                 opencorpora_tag['tag']['Person'] = r_person_opencorpora.get(value)
                 universalD_tag['tag']['Person'] = r_person_universalD.get(value)
                 continue
 
-            if name in ['число', '5'] and value is not None:
+            if name in ['число', '5']:
+                assert value in r_number_opencorpora
                 opencorpora_tag['tag']['Number'] = r_number_opencorpora[value]
                 universalD_tag['tag']['Number'] = r_number_universalD[value]
                 continue
@@ -316,13 +431,13 @@ def parse_template(word_acc, template):
                 continue
 
             if name == 'деепр':
-                continue
+                raise Exception()
 
             if name == 'прич':
-                continue
+                raise Exception()
 
             if name == 'кр':
-                continue
+                raise Exception()
 
             if name in ['помета', '7'] and value is not None:
                 continue
@@ -333,7 +448,6 @@ def parse_template(word_acc, template):
             if name == 'слоги':
                 continue
 
-        assert base is not None
         return [[word_acc, base, opencorpora_tag, universalD_tag]]
 
     if template_name == 'Форма-прил':
@@ -344,24 +458,32 @@ def parse_template(word_acc, template):
             name, value = get_name_value(argument)
 
             if name in ['база', '1']:
+                assert value is not None
                 base = value
                 continue
 
             if name in ['род', '2']:
-                assert value is not None
-                opencorpora_tag['tag']['Gender'] = r_gender_opencorpora.get(value)
-                universalD_tag['tag']['Gender'] = r_gender_universalD.get(value)
-                continue
+                if value in r_gender_opencorpora:
+                    opencorpora_tag['tag']['Gender'] = r_gender_opencorpora[value]
+                    universalD_tag['tag']['Gender'] = r_gender_universalD[value]
+                    continue
+                else:
+                    print('parsing error', word_acc)
+                    return []
 
             if name in ['число', '3']:
-                assert value is not None
-                opencorpora_tag['tag']['Number'] = r_number_opencorpora[value]
-                universalD_tag['tag']['Number'] = r_number_universalD[value]
-                continue
+                if value is not None:
+                    opencorpora_tag['tag']['Number'] = r_number_opencorpora[value]
+                    universalD_tag['tag']['Number'] = r_number_universalD[value]
+                    continue
+                else:
+                    opencorpora_tag['tag']['Number'] = r_number_opencorpora['1']
+                    universalD_tag['tag']['Number'] = r_number_universalD['1']
+                    continue
 
             if name in ['падеж', '4']:
-                assert value is not None
                 if value in ['ив', 'рв', 'рдп']:
+                    multiple_cases = True
                     opencorpora_tag['tag']['Case'] = []
                     universalD_tag['tag']['Case'] = []
                     for v in value:
@@ -370,29 +492,36 @@ def parse_template(word_acc, template):
                     continue
 
                 if ' и ' in value:
+                    multiple_cases = True
                     opencorpora_tag['tag']['Case'] = []
                     universalD_tag['tag']['Case'] = []
                     for v in value.split(' и '):
+                        assert v in r_case_opencorpora
                         opencorpora_tag['tag']['Case'].append(r_case_opencorpora.get(v))
                         universalD_tag['tag']['Case'].append(r_case_universalD.get(v))
                     continue
 
-                opencorpora_tag['tag']['Case'] = r_case_opencorpora.get(value)
-                universalD_tag['tag']['Case'] = r_case_universalD.get(value)
-                continue
-
-            if name == 'кр':
-                if value is None: continue
-                if value == '1':
-                    opencorpora_tag['pos'] = 'ADJS'
+                if value is not None:
+                    assert value in r_case_opencorpora
+                    opencorpora_tag['tag']['Case'] = r_case_opencorpora.get(value)
+                    universalD_tag['tag']['Case'] = r_case_universalD.get(value)
                     continue
-                raise Exception() # Unknown value
+                else:
+                    print('parsing error', word_acc)
+                    return []
+
+            if (name == 'кр' and value == '1') or value == 'кр':
+                opencorpora_tag['pos'] = 'ADJS'
+                universalD_tag['tag']['Variant'] = 'Short'
+                continue
 
             if name == 'слоги':
                 continue
 
-        assert base is not None
-        return [[word_acc, base, opencorpora_tag, universalD_tag]]
+        if multiple_cases:
+            return expand_cases(word_acc, base, opencorpora_tag, universalD_tag)
+        else:
+            return [[word_acc, base, opencorpora_tag, universalD_tag]]
 
     if template_name == 'conj ru':
         opencorpora_tag['pos'] = 'CONJ'
@@ -410,6 +539,7 @@ def parse_template(word_acc, template):
         universalD_tag['pos'] = 'ADJ'
 
         base = get_word_from_slogi(template)[0].replace('́', '')
+        assert base is not None
 
         for argument in template.arguments:
             name, value = get_name_value(argument)
@@ -420,7 +550,7 @@ def parse_template(word_acc, template):
                     if 'flags' in opencorpora_tag['tag']:
                         opencorpora_tag['tag']['flags'] += ',' + r_degree_opencorpora.get(value)
                     else:
-                        opencorpora_tag['tag']['more'] = r_degree_opencorpora.get(value)
+                        opencorpora_tag['pos-grammeme'] = r_degree_opencorpora.get(value)
                     universalD_tag['tag']['Degree'] = r_degree_univarsalD.get(value)
                     continue
                 raise Exception
@@ -436,70 +566,8 @@ def parse_template(word_acc, template):
         # склонения по падежу / числу
         parsed = wtp.parse(get_wikitext_api_expandtemplates(template.string))
         table = table_to_2d(BeautifulSoup(parsed.string.replace('<br>','\n'), 'lxml').table)
+        variants = parse_table_declension(table, base, opencorpora_tag, universalD_tag)
 
-        _header = table.pop(0)
-        assert _header[0].strip() == '[[падеж]]'
-        assert _header[1].strip() == '[[падеж]]'
-        assert _header[2].strip() == '[[единственное число|ед. ч.]]'
-        assert _header[3].strip() == '[[единственное число|ед. ч.]]'
-        assert _header[4].strip() == '[[единственное число|ед. ч.]]'
-        assert _header[5].strip() == '[[множественное число|мн. ч.]]'
-        _header = table.pop(0)
-        assert _header[0].strip() == '[[падеж]]'
-        assert _header[1].strip() == '[[падеж]]'
-        assert 'мужской' in _header[2]
-        assert 'средний' in _header[3]
-        assert 'женский' in _header[4]
-        assert _header[5].strip() == '[[множественное число|мн. ч.]]'
-
-        for row in table:
-            case = re.search(r'\[\[([а-яё. ]+)(\||\]\])', row[0]).group(1)
-            assert case in r_case_opencorpora or 'краткая' in case
-            anim = re.search(r'\[\[([а-яё. ]+)(\||\]\])', row[1]).group(1)
-            assert anim in r_anim_opencorpora or anim in r_case_opencorpora or 'краткая' in case
-
-            for i in range(4):
-                words = None
-                m = re.fullmatch(r'([́а-яёА-ЯЁ]+)', row[2+i])
-                if m is None: m = re.search(r'>([́а-яёА-ЯЁ]+)<', row[2+i])
-
-                if m is not None:
-                    words = [m.group(1)]
-                else:
-                    if '—' in row[2+i]:
-                        words = None
-                    else:
-                        splits = re.split(split_regex, row[2+i])
-                        if len(splits) > 1:
-                            words = splits
-                        else:
-                            raise Exception
-
-
-                if words is not None:
-                    opencorpora_tag_copy = copy.deepcopy(opencorpora_tag)
-                    universalD_tag_copy = copy.deepcopy(universalD_tag)
-
-                    if 'краткая' not in case:
-                        opencorpora_tag_copy['tag']['Case'] = r_case_opencorpora[case]
-                        universalD_tag_copy['tag']['Case'] = r_case_universalD[case]
-                    else:
-                        opencorpora_tag_copy['pos'] = 'ADJS'
-                        universalD_tag_copy['tag']['Variant'] = 'Short'
-                    opencorpora_tag_copy['tag']['Number'] = r_number_opencorpora['ед'] if i < 3 else r_number_opencorpora['мн']
-                    universalD_tag_copy['tag']['Number'] = r_number_universalD['ед'] if i < 3 else r_number_universalD['мн']
-                    if i < 3:
-                        genders = {0: 'м', 1: 'с', 2: 'ж'}
-                        opencorpora_tag_copy['tag']['Gender'] = r_gender_opencorpora[genders[i]]
-                        universalD_tag_copy['tag']['Gender'] = r_gender_universalD[genders[i]]
-
-                    if anim in r_anim_opencorpora:
-                        opencorpora_tag_copy['tag']['Animacy'] = r_anim_opencorpora[anim]
-                        universalD_tag_copy['tag']['Animacy'] = r_anim_univarsalD[anim]
-
-                    variants.append([words, base, opencorpora_tag_copy, universalD_tag_copy])
-
-        assert base is not None
         return variants
 
     if template_name == 'сущ-ru':
@@ -542,33 +610,18 @@ def parse_template(word_acc, template):
             assert case in r_case_opencorpora
 
             for i in range(2):
-                m = re.fullmatch(r'([́а-яёА-ЯЁ]+)', row[1+i])
-                if m is None: m = re.search(r'>([́а-яёА-ЯЁ]+)<', row[1+i])
+                words = get_words_from_text(row[1 + i])
 
-                if m is not None:
-                    words = [m.group(1)]
-                else:
-                    if '—' in row[1+i]:
-                        words = None
-                    else:
-                        splits = re.split(split_regex, row[1+i])
-                        if len(splits) > 1:
-                            words = splits
-                        else:
-                            raise Exception
+                opencorpora_tag_copy = copy.deepcopy(opencorpora_tag)
+                universalD_tag_copy = copy.deepcopy(universalD_tag)
 
+                opencorpora_tag_copy['tag']['Case'] = r_case_opencorpora[case]
+                universalD_tag_copy['tag']['Case'] = r_case_universalD[case]
 
-                if words is not None:
-                    opencorpora_tag_copy = copy.deepcopy(opencorpora_tag)
-                    universalD_tag_copy = copy.deepcopy(universalD_tag)
+                opencorpora_tag_copy['tag']['Number'] = r_number_opencorpora['ед'] if i == 0 else r_number_opencorpora['мн']
+                universalD_tag_copy['tag']['Number'] = r_number_universalD['ед'] if i == 0 else r_number_universalD['мн']
 
-                    opencorpora_tag_copy['tag']['Case'] = r_case_opencorpora[case]
-                    universalD_tag_copy['tag']['Case'] = r_case_universalD[case]
-
-                    opencorpora_tag_copy['tag']['Number'] = r_number_opencorpora['ед'] if i == 0 else r_number_opencorpora['мн']
-                    universalD_tag_copy['tag']['Number'] = r_number_universalD['ед'] if i == 0 else r_number_universalD['мн']
-
-                    variants.append([words, base, opencorpora_tag_copy, universalD_tag_copy])
+                variants.append([words, base, opencorpora_tag_copy, universalD_tag_copy])
 
         assert base is not None
         return variants
@@ -608,33 +661,18 @@ def parse_template(word_acc, template):
             assert case in r_case_opencorpora
 
             for i in range(2):
-                m = re.fullmatch(r'([́а-яёА-ЯЁ]+)', row[1+i])
-                if m is None: m = re.search(r'>([́а-яёА-ЯЁ]+)<', row[1+i])
+                words = get_words_from_text(row[1 + i])
 
-                if m is not None:
-                    words = [m.group(1)]
-                else:
-                    if '—' in row[1+i]:
-                        words = None
-                    else:
-                        splits = re.split(split_regex, row[1+i])
-                        if len(splits) > 1:
-                            words = splits
-                        else:
-                            raise Exception
+                opencorpora_tag_copy = copy.deepcopy(opencorpora_tag)
+                universalD_tag_copy = copy.deepcopy(universalD_tag)
 
+                opencorpora_tag_copy['tag']['Case'] = r_case_opencorpora[case]
+                universalD_tag_copy['tag']['Case'] = r_case_universalD[case]
 
-                if words is not None:
-                    opencorpora_tag_copy = copy.deepcopy(opencorpora_tag)
-                    universalD_tag_copy = copy.deepcopy(universalD_tag)
+                opencorpora_tag_copy['tag']['Number'] = r_number_opencorpora['ед'] if i == 0 else r_number_opencorpora['мн']
+                universalD_tag_copy['tag']['Number'] = r_number_universalD['ед'] if i == 0 else r_number_universalD['мн']
 
-                    opencorpora_tag_copy['tag']['Case'] = r_case_opencorpora[case]
-                    universalD_tag_copy['tag']['Case'] = r_case_universalD[case]
-
-                    opencorpora_tag_copy['tag']['Number'] = r_number_opencorpora['ед'] if i == 0 else r_number_opencorpora['мн']
-                    universalD_tag_copy['tag']['Number'] = r_number_universalD['ед'] if i == 0 else r_number_universalD['мн']
-
-                    variants.append([words, base, opencorpora_tag_copy, universalD_tag_copy])
+                variants.append([words, base, opencorpora_tag_copy, universalD_tag_copy])
 
         return variants
 
@@ -781,84 +819,6 @@ def parse_template(word_acc, template):
         parsed = wtp.parse(get_wikitext_api_expandtemplates(template.string))
         table = table_to_2d(BeautifulSoup(parsed.string.replace('<br>', '\n'), 'lxml').table)
 
-        _header = table.pop(0)
-        assert _header[0].strip() == '[[падеж]]'
-        assert _header[1].strip() == '[[падеж]]'
-        assert _header[2].strip() == '[[единственное число|ед. ч.]]'
-        assert _header[3].strip() == '[[единственное число|ед. ч.]]'
-        assert _header[4].strip() == '[[единственное число|ед. ч.]]'
-        assert _header[5].strip() == '[[множественное число|мн. ч.]]'
-        _header = table.pop(0)
-        assert _header[0].strip() == '[[падеж]]'
-        assert _header[1].strip() == '[[падеж]]'
-        assert 'мужской' in _header[2]
-        assert 'средний' in _header[3]
-        assert 'женский' in _header[4]
-        assert _header[5].strip() == '[[множественное число|мн. ч.]]'
-
-        last_row = None
-        last_variant = None
-
-        for row_index, row in enumerate(table):
-            case = re.search(r'\[\[([а-яё. ]+)(\||\]\])', row[0]).group(1)
-            assert case in r_case_opencorpora or 'краткая' in case
-            anim = re.search(r'\[\[([а-яё. ]+)(\||\]\])', row[1]).group(1)
-            assert anim in r_anim_opencorpora or anim in r_case_opencorpora or 'краткая' in case
-
-            for i in range(4):
-                # if cell is merged
-                if row_index > 0 and row[0] != row[1] and table[row_index - 1][0] != table[row_index - 1][1] and row[2 + i] == table[row_index - 1][2 + i]:
-                    continue
-
-                if row_index < len(table) - 1 and row[0] != row[1] and table[row_index + 1][0] != table[row_index + 1][1] and row[2 + i] == table[row_index + 1][2 + i]:
-                    anim = None
-
-                words = None
-                m = re.fullmatch(r'([́а-яёА-ЯЁ]+)', row[2 + i])
-                if m is None:
-                    m = re.search(r'>([́а-яёА-ЯЁ]+)<', row[2 + i])
-
-                if m is not None:
-                    words = [m.group(1)]
-                else:
-                    if '—' in row[2 + i]:
-                        words = None
-                    else:
-                        splits = re.split(split_regex, row[2 + i])
-                        splits = [re.search(r'([́а-яёА-ЯЁ.]+)', x).group(1) for x in splits]
-                        splits = [x for x in splits if 'устар.' not in x]
-                        if len(splits) > 1:
-                            words = splits
-                        else:
-                            raise Exception
-
-                for word in words:
-                    assert re.match(r'([́а-яёА-ЯЁ]+)', word)
-
-                if words is not None:
-                    opencorpora_tag_copy = copy.deepcopy(opencorpora_tag)
-                    universalD_tag_copy = copy.deepcopy(universalD_tag)
-
-                    if 'краткая' not in case:
-                        opencorpora_tag_copy['tag']['Case'] = r_case_opencorpora[case]
-                        universalD_tag_copy['tag']['Case'] = r_case_universalD[case]
-                    else:
-                        opencorpora_tag_copy['pos'] = 'ADJS'
-                        universalD_tag_copy['tag']['Variant'] = 'Short'
-                    opencorpora_tag_copy['tag']['Number'] = r_number_opencorpora['ед'] if i < 3 else r_number_opencorpora['мн']
-                    universalD_tag_copy['tag']['Number'] = r_number_universalD['ед'] if i < 3 else r_number_universalD['мн']
-                    if i < 3:
-                        genders = {0: 'м', 1: 'с', 2: 'ж'}
-                        opencorpora_tag_copy['tag']['Gender'] = r_gender_opencorpora[genders[i]]
-                        universalD_tag_copy['tag']['Gender'] = r_gender_universalD[genders[i]]
-
-                    if anim in r_anim_opencorpora:
-                        opencorpora_tag_copy['tag']['Animacy'] = r_anim_opencorpora[anim]
-                        universalD_tag_copy['tag']['Animacy'] = r_anim_univarsalD[anim]
-
-                    last_variant = [words, base, opencorpora_tag_copy, universalD_tag_copy]
-                    variants.append(last_variant)
-
-            last_row = row
+        variants = parse_table_declension(table, base, opencorpora_tag, universalD_tag)
 
         return variants

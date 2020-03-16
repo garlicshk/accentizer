@@ -63,6 +63,8 @@ class BaseTags:
     ANIMACY = ()
     NUMBER = ()
     DEGREE = ()
+    TENSE = ()
+    PERSON = ()
 
     def __init__(self):
         self.pos: str = None
@@ -109,15 +111,25 @@ class BaseTags:
                 assert val in self.DEGREE
                 self.tags[name] = val
 
+            if name == 'Tense':
+                assert val in self.TENSE
+                self.tags[name] = val
+
+            if name == 'Person':
+                assert val in self.PERSON
+                self.tags[name] = val
+
 class UniversaldependenciesTags(BaseTags):
     POS = ('NOUN', 'ADJ', 'VERB', 'PRON', 'DET')
-    TAGS = ('Animacy', 'Case', 'Gender', 'Number', 'Degree', 'Variant')
+    TAGS = ('Animacy', 'Case', 'Gender', 'Number', 'Degree', 'Variant', 'Tense', 'Person')
     CASE = ('Nom', 'Gen', 'Dat', 'Acc', 'Ins', 'Loc')
     GENDER = ('Fem', 'Masc', 'Neut')
     ANIMACY = ('Inan', 'Anim')
     NUMBER = ('Sing', 'Plur')
     DEGREE = ('Pos', 'Cmp', 'Sup')
     VARIANT = ('Short')
+    TENSE = ('Past', 'Pres', 'Fut')
+    PERSON = ('1', '2', '3')
 
     def set_tags(self, tags):
         super().set_tags(tags)
@@ -133,12 +145,14 @@ class UniversaldependenciesTags(BaseTags):
 class OpencorporaTags(BaseTags):
     POS = ('NOUN', 'ADJF', 'ADJS', 'VERB')
     POS_G = ('Apro', 'Qual')
-    TAGS = ('Animacy', 'Case', 'Gender', 'Number', 'Degree')
+    TAGS = ('Animacy', 'Case', 'Gender', 'Number', 'Tense', 'Person')
     CASE = ('nomn', 'gent', 'datv', 'accs', 'ablt', 'loct')
     GENDER = ('femn', 'masc', 'neut')
     ANIMACY = ('inan', 'anim')
     NUMBER = ('sing', 'plur')
     DEGREE = ()
+    TENSE = ('pres', 'fast', 'futr')
+    PERSON = ('1per', '2per', '3per')
 
     def __init__(self):
         BaseTags.__init__(self)
