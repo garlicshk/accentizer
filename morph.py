@@ -111,12 +111,24 @@ class BaseTags:
 
 class UniversaldependenciesTags(BaseTags):
     POS = ('NOUN', 'ADJ', 'VERB', 'PRON', 'DET')
-    TAGS = ('Animacy', 'Case', 'Gender', 'Number', 'Degree')
+    TAGS = ('Animacy', 'Case', 'Gender', 'Number', 'Degree', 'Variant')
     CASE = ('Nom', 'Gen', 'Dat', 'Acc', 'Ins', 'Loc')
     GENDER = ('Fem', 'Masc', 'Neut')
     ANIMACY = ('Inan', 'Anim')
     NUMBER = ('Sing', 'Plur')
     DEGREE = ('Pos', 'Cmp', 'Sup')
+    VARIANT = ('Short')
+
+    def set_tags(self, tags):
+        super().set_tags(tags)
+
+        for name, val in tags.items():
+            assert name in self.TAGS
+
+            if name == 'Variant':
+                assert val in self.VARIANT
+                self.tags[name] = val
+
 
 class OpencorporaTags(BaseTags):
     POS = ('NOUN', 'ADJF', 'ADJS', 'VERB')
