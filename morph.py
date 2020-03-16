@@ -61,7 +61,7 @@ class BaseTags:
     NUMBER = ()
     DEGREE = ()
 
-    def __init__(self, morph):
+    def __init__(self):
         self.pos: str = None
         self.tags: Dict[str, str] = {}
 
