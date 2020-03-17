@@ -146,7 +146,7 @@ class OpencorporaTags(BaseTags):
     POS = ('NOUN', 'ADJF', 'ADJS', 'VERB')
     POS_G = ('Apro', 'Qual')
     TAGS = ('Animacy', 'Case', 'Gender', 'Number', 'Tense', 'Person')
-    CASE = ('nomn', 'gent', 'datv', 'accs', 'ablt', 'loct')
+    CASE = ('nomn', 'gent', 'gen2', 'datv', 'accs', 'ablt', 'loct', 'loc2')
     GENDER = ('femn', 'masc', 'neut')
     ANIMACY = ('inan', 'anim')
     NUMBER = ('sing', 'plur')

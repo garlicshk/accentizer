@@ -156,11 +156,12 @@ def get_word_from_slogi(section):
     t = ''
 
     for argument in template.arguments:
-        if re.fullmatch(r'[́а-яёА-ЯЁ]+', argument.value.strip()):
-            t += argument.value.strip()
+        value = argument.value.strip().replace('̀', '')
+        if re.fullmatch(r'[́а-яёА-ЯЁ]+', value):
+            t += value
 
-        if "\'\'и\'\'" in argument.value:
-            parts = [x.strip() for x in argument.value.split('\'\'и\'\'')]
+        if "\'\'и\'\'" in value:
+            parts = [x.strip() for x in value.split('\'\'и\'\'')]
             t += parts[0]
             word_acc.append(t)
             t = parts[1]

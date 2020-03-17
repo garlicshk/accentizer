@@ -1,7 +1,10 @@
 import pickle
+import re
 from os import path
 from pprint import pprint
 from typing import Dict, Set, Tuple
+
+import pymorphy2
 
 from morph import Morph
 from utilities import count_vovels
@@ -56,30 +59,32 @@ class AccentDictionary:
         if count_vovels(word) < 2: return
 
         if word in self.homographs_unresolvable:
-            print('Word is unresolvable:', word, pos)
+            print('add_accent: word in unresolvable:', word[:pos + 1] + '́' + word[pos + 1:])
             return
 
         if word in self.homographs:
-            print('Word is homograph:', word, pos)
+            print('add_accent: word in homographs:', word[:pos + 1] + '́' + word[pos + 1:])
             # self.add_homograph(form, [pos, None], [self.accents[form], None])
+            raise Exception()
             return
 
         if word in self.accents:
             if self.accents[word] != pos:
-                print('Word is homograph:', word, pos)
+                print('add_accent: word is homograph:', word[:pos + 1] + '́' + word[pos + 1:])
                 # self.add_homograph(form, [pos, None], [self.accents[form], None])
+                raise Exception()
             return
 
         self.accents[word] = pos
         self.changed = True
-        print('new accent', word, pos)
+        print('new accent', word[:pos + 1] + '́' + word[pos + 1:])
 
     def add_homograph(self, word: str, morph: Morph, pos: int):
         if count_vovels(word) < 2: return
         self.accents.pop(word, None)
 
         if word in self.homographs_unresolvable:
-            print('Word is unresolvable:', word, pos, morph)
+            print('add_homograph: word in unresolvable:', word[:pos + 1] + '́' + word[pos + 1:], morph)
             self.add_homograph_unresolvable(word, morph, pos)
             return
 
@@ -98,15 +103,16 @@ class AccentDictionary:
 
         if morph in self.homographs[word][MORPHS]:
             if self.homographs[word][MORPHS][morph] != pos:
+                self.move_to_unresolvable(word)
                 self.add_homograph_unresolvable(word, morph, pos)
             else:
-                pprint(['homograph exists', word, self.homographs[word]])
+                print('homograph exists', word[:pos + 1] + '́' + word[pos + 1:], morph)
         else:
             self.homographs[word][POS_SET].add(pos)
             self.homographs[word][MORPHS][morph] = pos
 
             self.changed = True
-            print('new homograph', word, pos, morph)
+            print('new homograph', word[:pos + 1] + '́' + word[pos + 1:], morph)
 
     def add_homograph_unresolvable(self, word, morph, pos):
         assert morph is not None
@@ -119,23 +125,24 @@ class AccentDictionary:
             if morph in self.homographs_unresolvable[word][MORPHS]:
                 if not pos in self.homographs_unresolvable[word][MORPHS][morph]:
                     self.homographs_unresolvable[word][MORPHS][morph].add(pos)
+                    self.homographs_unresolvable[word][POS_SET].add(pos)
                     self.changed = True
-                    print('new unresolvable homograph pos', self.homographs_unresolvable[word][MORPHS][morph])
+                    print('new unresolvable homograph pos', word[:pos + 1] + '́' + word[pos + 1:], self.homographs_unresolvable[word][MORPHS][morph])
                 else:
-                    print('unresolvable homograph exists', self.homographs_unresolvable[word])
+                    print('unresolvable homograph exists', word[:pos + 1] + '́' + word[pos + 1:])
             else:
                 self.homographs_unresolvable[word][POS_SET].add(pos)
                 self.homographs_unresolvable[word][MORPHS][morph] = set([pos])
 
                 self.changed = True
-                print('new unresolvable', word, pos, morph)
+                print('new unresolvable', word[:pos + 1] + '́' + word[pos + 1:], morph)
         else:
             self.homographs_unresolvable[word] = (set(), {})
             self.homographs_unresolvable[word][POS_SET].add(pos)
             self.homographs_unresolvable[word][MORPHS][morph] = set([pos])
 
             self.changed = True
-            print('new unresolvable', word, pos, morph)
+            print('new unresolvable', word[:pos + 1] + '́' + word[pos + 1:], morph)
 
     def clean_homographs(self):
         for k in list(self.homographs):
@@ -144,17 +151,99 @@ class AccentDictionary:
                 if count_vovels(k) > 1:
                     self.add_accent(k, list(data[0])[0])
 
+    def move_to_unresolvable(self, word):
+        if word in self.homographs:
+            h = self.homographs.pop(word)
+            self.homographs_unresolvable[word] = (h[POS_SET], {})
+            for morph in h[MORPHS]:
+                self.homographs_unresolvable[word][MORPHS][morph] = set([h[MORPHS][morph]])
+
+            print('homograph moved to unresolvable', word)
+
+bad_words_h = ['автозаводска', 'автозаводско', 'автозаводски']
+skip_words = ['асессоров']
+not_found_words_h = []
+prefixes = ['авто', 'агит']
+
 if __name__ == "__main__":
     dictionary = AccentDictionary()
     dictionary.load()
 
+    morpher = pymorphy2.MorphAnalyzer()
+
+    skip = True
+
     for word in dictionary.homographs_old:
+        if skip:
+            if word == 'атласный':
+                skip = False
+            else:
+                continue
+
+        if word in skip_words:
+            continue
         # word = 'стоит'
         print(word)
         variants = parse_wikt_ru(word)
+        prefix = None
+
+        if len(variants) == 0:
+            if not(word in dictionary.homographs or word in dictionary.homographs_unresolvable or word in bad_words_h or word in not_found_words_h):
+                parse = morpher.parse(word)
+                normal_word = parse[0].normal_form
+                print('normal_form', normal_word, word)
+                variants = parse_wikt_ru(normal_word)
+
+                fl = False
+
+                for variant in variants:
+                    for word_var in variant[0]:
+                        if word_var.replace('́', '') == word:
+                            fl = True
+                            break
+                    if fl: break
+
+                if not fl:
+                    match = re.match(r'|'.join(prefixes), word)
+
+                    if match:
+                        prefix = match.group()
+                        word = word[match.end():match.endpos]
+                        print('приставка', prefix, word)
+                        variants = parse_wikt_ru(word)
+
+                    if len(variants) == 0:
+                        parse = morpher.parse(word)
+                        normal_word = parse[0].normal_form
+                        print('normal_form', normal_word, word)
+                        variants = parse_wikt_ru(normal_word)
+
+                        fl = False
+
+                        for variant in variants:
+                            for word_var in variant[0]:
+                                if word_var.replace('́', '') == word:
+                                    fl = True
+                                    break
+
+                        if not fl:
+                            print('Not found', word)
+                            raise Exception()
+
+
+            else:
+                print('Not found, word in dict', word)
+
+        if prefix is not None:
+            for variant in variants:
+                variant[1] = prefix + variant[1]
+                for i, word_var in enumerate(variant[0]):
+                    variant[0][i] = prefix + word_var
+
         for variant in variants:
             for word_var in variant[0]:
                 if 'ё' in word_var: continue
+
                 morph = Morph()
                 morph.set_base(variant[1])
                 morph.fill_tags_from_variant(variant)

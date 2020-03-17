@@ -74,6 +74,7 @@ r_case_opencorpora = {
     'в': 'accs',
     'т': 'ablt',
     'п': 'loct',
+    'м': 'loc2',
     'им.': 'nomn',
     'род.': 'gent',
     'дат.': 'datv',
@@ -92,6 +93,7 @@ r_case_opencorpora = {
     'винительного': 'accs',
     'творительного': 'ablt',
     'предложного': 'loct',
+    'разделительный': 'gen2',
 }
 r_case_universalD = {
     'и': 'Nom',
@@ -100,6 +102,7 @@ r_case_universalD = {
     'в': 'Acc',
     'т': 'Ins',
     'п': 'Loc',
+    'м': 'Loc',
     'им.': 'Nom',
     'род.': 'Gen',
     'дат.': 'Dat',
@@ -118,6 +121,7 @@ r_case_universalD = {
     'винительного': 'Acc',
     'творительного': 'Ins',
     'предложного': 'Loc',
+    'разделительный': 'Gen',
 }
 r_number_opencorpora = {
     'ед': 'sing',
@@ -216,6 +220,7 @@ def get_name_value(argument):
 
 
 def get_words_from_text(row):
+    row = row.replace('̀', '')
     m = re.fullmatch(r'([́а-яёА-ЯЁ]+)', row)
 
     if m is None:
@@ -229,7 +234,7 @@ def get_words_from_text(row):
             raise Exception()
         else:
             splits = re.split(split_regex, row)
-            splits = [re.search(r'([́а-яёА-ЯЁ.]+)', x).group(1) for x in splits]
+            splits = [re.search(r'([́а-яёА-ЯЁ.]+)', x).group(1) for x in splits if len(x) > 0]
             splits = [x for x in splits if 'устар.' not in x]
             if len(splits) > 1:
                 words = splits
@@ -325,6 +330,12 @@ def expand_cases(word_acc, base, opencorpora_tag, universalD_tag):
     return variants
 
 
+def get_variants_from_custom_table(table, base, opencorpora_tag, universalD_tag):
+    variants = []
+
+    return variants
+
+
 def parse_template(word_acc, template):
     from wiktparser import search_section_for_template, get_word_from_slogi, get_wikitext_api_expandtemplates
 
@@ -366,6 +377,7 @@ def parse_template(word_acc, template):
                         universalD_tag['tag']['Case'].append(r_case_universalD.get(v))
                     continue
 
+                assert value in r_case_opencorpora
                 opencorpora_tag['tag']['Case'] = r_case_opencorpora.get(value)
                 universalD_tag['tag']['Case'] = r_case_universalD.get(value)
                 continue
@@ -547,15 +559,17 @@ def parse_template(word_acc, template):
             if name == 'тип':
                 if value is None: continue
                 if value == 'качественное':
-                    if 'flags' in opencorpora_tag['tag']:
-                        opencorpora_tag['tag']['flags'] += ',' + r_degree_opencorpora.get(value)
+                    if 'pos-grammeme' in opencorpora_tag:
+                        opencorpora_tag['grammeme'] += ',' + r_degree_opencorpora.get(value)
                     else:
                         opencorpora_tag['pos-grammeme'] = r_degree_opencorpora.get(value)
                     universalD_tag['tag']['Degree'] = r_degree_univarsalD.get(value)
                     continue
+                if value == 'относительное':
+                    continue
                 raise Exception
 
-            if name == 'степень':
+            if name == 'степень' and value is not None: # can be None?
                 assert value is not None
                 for wikilink in wtp.parse(value).wikilinks:
                     lookup_words.append(wikilink.text)
@@ -630,8 +644,8 @@ def parse_template(word_acc, template):
         opencorpora_tag['pos'] = 'NOUN'
         universalD_tag['pos'] = 'NOUN'
 
-        base = get_word_from_slogi(template)[0].replace('́', '')
-        assert base is not None
+        slogi = get_word_from_slogi(template)
+        if slogi is not None: base = slogi[0].replace('́', '')
 
         data = template_name.split()[2:-1]
 
@@ -656,11 +670,19 @@ def parse_template(word_acc, template):
         assert 'единственное' in _header[1]
         assert 'множественное' in _header[2]
 
+        if base is None:
+            base = table[0][1].replace('́', '')
+
         for row in table:
             case = re.match(r'\[\[([а-яё.]+)(\||\]\])', row[0]).group(1)
             assert case in r_case_opencorpora
 
             for i in range(2):
+                if '<tr>' in row[1 + i]:
+                    inner_table = table_to_2d(BeautifulSoup('<table>' + row[1 + i].replace('<br>', '\n') + '</table>', 'lxml'))
+                    variants += get_variants_from_custom_table(inner_table, base, opencorpora_tag, universalD_tag)
+                    row[1 + i] = row[1 + i][:row[1 + i].find('<tr>')]
+
                 words = get_words_from_text(row[1 + i])
 
                 opencorpora_tag_copy = copy.deepcopy(opencorpora_tag)
@@ -674,6 +696,7 @@ def parse_template(word_acc, template):
 
                 variants.append([words, base, opencorpora_tag_copy, universalD_tag_copy])
 
+        assert base is not None
         return variants
 
     if 'Фам ru' in template_name:
