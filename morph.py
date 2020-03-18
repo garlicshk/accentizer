@@ -65,6 +65,7 @@ class BaseTags:
     DEGREE = ()
     TENSE = ()
     PERSON = ()
+    MOOD = ()
 
     def __init__(self):
         self.pos: str = None
@@ -119,9 +120,13 @@ class BaseTags:
                 assert val in self.PERSON
                 self.tags[name] = val
 
+            if name == 'Mood':
+                assert val in self.MOOD
+                self.tags[name] = val
+
 class UniversaldependenciesTags(BaseTags):
-    POS = ('NOUN', 'ADJ', 'VERB', 'PRON', 'DET')
-    TAGS = ('Animacy', 'Case', 'Gender', 'Number', 'Degree', 'Variant', 'Tense', 'Person')
+    POS = ('NOUN', 'ADJ', 'VERB', 'PRON', 'DET', 'ADV')
+    TAGS = ('Animacy', 'Case', 'Gender', 'Number', 'Degree', 'Variant', 'Tense', 'Person', 'Aspect', 'Mood', 'VerbForm')
     CASE = ('Nom', 'Gen', 'Dat', 'Acc', 'Ins', 'Loc')
     GENDER = ('Fem', 'Masc', 'Neut')
     ANIMACY = ('Inan', 'Anim')
@@ -130,6 +135,9 @@ class UniversaldependenciesTags(BaseTags):
     VARIANT = ('Short')
     TENSE = ('Past', 'Pres', 'Fut')
     PERSON = ('1', '2', '3')
+    ASPECT = ('Perf', 'Imp')
+    MOOD = ('Ind', 'Imp', 'Cnd')
+    VERB_FORM = ('Fin', 'Inf', 'Part', 'Conv')
 
     def set_tags(self, tags):
         super().set_tags(tags)
@@ -141,31 +149,41 @@ class UniversaldependenciesTags(BaseTags):
                 assert val in self.VARIANT
                 self.tags[name] = val
 
+            if name == 'Aspect':
+                assert val in self.ASPECT
+                self.tags[name] = val
+
+            if name == 'VerbForm':
+                assert val in self.VERB_FORM
+                self.tags[name] = val
+
 
 class OpencorporaTags(BaseTags):
-    POS = ('NOUN', 'ADJF', 'ADJS', 'VERB')
-    POS_G = ('Apro', 'Qual')
-    TAGS = ('Animacy', 'Case', 'Gender', 'Number', 'Tense', 'Person')
+    POS = ('NOUN', 'ADJF', 'ADJS', 'VERB', 'ADVB', 'INFN', 'PRTF', 'GRND')
+    POS_G = ('Apro', 'Qual', 'Poss', 'impf', 'perf', 'tran', 'intr')
+    TAGS = ('Animacy', 'Case', 'Gender', 'Number', 'Tense', 'Person', 'Mood')
     CASE = ('nomn', 'gent', 'gen2', 'datv', 'accs', 'ablt', 'loct', 'loc2')
     GENDER = ('femn', 'masc', 'neut')
     ANIMACY = ('inan', 'anim')
     NUMBER = ('sing', 'plur')
     DEGREE = ()
-    TENSE = ('pres', 'fast', 'futr')
+    TENSE = ('pres', 'past', 'futr')
     PERSON = ('1per', '2per', '3per')
+    MOOD = ('indc', 'impr')
 
     def __init__(self):
         BaseTags.__init__(self)
-        self.pos_grammeme = None
+        self.pos_grammeme = set()
 
     def from_variant(self, variant):
         super().from_variant(variant)
         if 'pos-grammeme' in variant:
-            assert variant['pos-grammeme'] in self.POS_G
-            self.pos_grammeme = variant['pos-grammeme']
+            for g in variant['pos-grammeme']:
+                assert g in self.POS_G
+                self.pos_grammeme.add(g)
 
     def __str__(self):
-        return (self.pos if self.pos_grammeme is None else self.pos + ',' + self.pos_grammeme)\
+        return self.pos + ''.join([',' + x for x in self.pos_grammeme])\
                + ' ' + '|'.join(['='.join(x) for x in self.tags.items()])
 
 
