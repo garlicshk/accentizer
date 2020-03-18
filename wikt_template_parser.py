@@ -127,11 +127,27 @@ r_number_opencorpora = {
     'ед': 'sing',
     '1': 'sing',
     'мн': 'plur',
+    '2': 'sing',
+    '3': 'sing',
+    'я': 'sing',
+    'ты': 'sing',
+    'он': 'sing',
+    'мы': 'plur',
+    'вы': 'plur',
+    'они': 'plur',
 }
 r_number_universalD = {
     'ед': 'Sing',
     '1': 'Sing',
     'мн': 'Plur',
+    '2': 'Sing',
+    '3': 'Sing',
+    'я': 'Sing',
+    'ты': 'Sing',
+    'он': 'Sing',
+    'мы': 'Plur',
+    'вы': 'Plur',
+    'они': 'Plur',
 }
 r_tense_opencorpora = {
     'наст': 'pres',
@@ -150,6 +166,9 @@ r_gender_opencorpora = {
     'm': 'masc',
     'f': 'femn',
     'n': 'neut',
+    'он': 'masc',
+    'она': 'femn',
+    'оно': 'neut',
 }
 r_gender_universalD = {
     'м': 'Masc',
@@ -158,6 +177,9 @@ r_gender_universalD = {
     'm': 'Masc',
     'f': 'Fem',
     'n': 'Neut',
+    'он': 'Masc',
+    'она': 'Fem',
+    'оно': 'Neut',
 }
 r_person_opencorpora = {
     '1': '1per',
@@ -187,7 +209,7 @@ r_anim_opencorpora = {
     'одушевлённый': 'anim',
     'неодушевлённый': 'inan',
 }
-r_anim_univarsalD = {
+r_anim_universalD = {
     'a': 'Anim',
     'ina': 'Inan',
     'одушевлённый': 'Anim',
@@ -196,12 +218,21 @@ r_anim_univarsalD = {
 r_degree_opencorpora = {
     'качественное': 'Qual',
 }
-r_degree_univarsalD = {
+r_degree_universalD = {
     'качественное': 'Pos',
 }
+r_mood_opencorpora = {
+    'повелительное': 'impr',
+}
+r_mood_universalD = {
+    'повелительное': 'Imp',
+}
 
-known_templates = ['Форма-сущ', 'Форма-гл', 'Форма-прил', 'conj ru', 'сущ-ru',]
-advansed_templates = ['сущ ru', 'прил ru', 'Фам ru', 'гл ru', 'мест ru']
+known_templates = ['Форма-сущ', 'Форма-гл', 'Форма-прил', 'conj ru', 'сущ-ru', 'adv ru']
+advansed_templates = ['сущ ru', 'прил ru', 'Фам ru', 'гл ru', 'мест ru', 'прич ru']
+
+PRESENT = ('настоящего', 'настоящее')
+PAST = ('прошедшего', 'прошедшее')
 
 def known_template(template):
     template_name = template.name.strip()
@@ -216,10 +247,14 @@ def known_template(template):
 def get_name_value(argument):
     name = argument.name.strip()
     value = argument.value.strip()
+    value = clean_comments(value)
     return name, value if len(value) > 0 else None
 
 
 def get_words_from_text(row):
+    if re.fullmatch(r'[^а-яА-ЯёЁ]*—[^а-яА-ЯёЁ]*', row):
+        return None
+
     row = row.replace('̀', '')
     m = re.fullmatch(r'([́а-яёА-ЯЁ]+)', row)
 
@@ -229,20 +264,16 @@ def get_words_from_text(row):
     if m is not None:
         words = [m.group(1)]
     else:
-        if '—' in row:
-            words = None
-            raise Exception()
+        splits = re.split(split_regex, row)
+        splits = [re.search(r'([́а-яёА-ЯЁ.]+)', x).group(1) for x in splits if len(x) > 0]
+        splits = [x for x in splits if 'устар.' not in x]
+        if len(splits) > 1:
+            words = splits
         else:
-            splits = re.split(split_regex, row)
-            splits = [re.search(r'([́а-яёА-ЯЁ.]+)', x).group(1) for x in splits if len(x) > 0]
-            splits = [x for x in splits if 'устар.' not in x]
-            if len(splits) > 1:
+            if re.match(r'([́а-яёА-ЯЁ]+)', splits[0]):
                 words = splits
             else:
-                if re.match(r'([́а-яёА-ЯЁ]+)', splits[0]):
-                    words = splits
-                else:
-                    raise Exception
+                raise Exception
 
     for word in words:
         assert re.match(r'([́а-яёА-ЯЁ]+)', word)
@@ -308,7 +339,7 @@ def parse_table_declension(table, base, opencorpora_tag, universalD_tag):
 
             if anim in r_anim_opencorpora:
                 opencorpora_tag_copy['tag']['Animacy'] = r_anim_opencorpora[anim]
-                universalD_tag_copy['tag']['Animacy'] = r_anim_univarsalD[anim]
+                universalD_tag_copy['tag']['Animacy'] = r_anim_universalD[anim]
 
             last_variant = [words, base, opencorpora_tag_copy, universalD_tag_copy]
             variants.append(last_variant)
@@ -332,8 +363,12 @@ def expand_cases(word_acc, base, opencorpora_tag, universalD_tag):
 
 def get_variants_from_custom_table(table, base, opencorpora_tag, universalD_tag):
     variants = []
-
+    raise NotImplemented()
     return variants
+
+
+def clean_comments(value):
+    return re.sub(r'<!--.*-->', '', value)
 
 
 def parse_template(word_acc, template):
@@ -343,7 +378,7 @@ def parse_template(word_acc, template):
     lookup_words = []
     template_name = template.name.strip()
 
-    opencorpora_tag = {'tag': {}}
+    opencorpora_tag = {'tag': {}, 'pos-grammeme': set()}
     universalD_tag = {'tag': {}}
     base = None
 
@@ -399,7 +434,7 @@ def parse_template(word_acc, template):
                 continue
 
         assert base is not None
-        return [[word_acc, base, opencorpora_tag, universalD_tag]]
+        return [[word_acc, base, opencorpora_tag, universalD_tag]], lookup_words
 
     if template_name == 'Форма-гл':
         opencorpora_tag['pos'] = 'VERB'
@@ -460,7 +495,7 @@ def parse_template(word_acc, template):
             if name == 'слоги':
                 continue
 
-        return [[word_acc, base, opencorpora_tag, universalD_tag]]
+        return [[word_acc, base, opencorpora_tag, universalD_tag]], lookup_words
 
     if template_name == 'Форма-прил':
         opencorpora_tag['pos'] = 'ADJF'
@@ -481,7 +516,7 @@ def parse_template(word_acc, template):
                     continue
                 else:
                     print('parsing error', word_acc)
-                    return []
+                    return [], lookup_words
 
             if name in ['число', '3']:
                 if value is not None:
@@ -520,7 +555,7 @@ def parse_template(word_acc, template):
                     continue
                 else:
                     print('parsing error', word_acc)
-                    return []
+                    return [], lookup_words
 
             if (name == 'кр' and value == '1') or value == 'кр':
                 opencorpora_tag['pos'] = 'ADJS'
@@ -531,9 +566,9 @@ def parse_template(word_acc, template):
                 continue
 
         if multiple_cases:
-            return expand_cases(word_acc, base, opencorpora_tag, universalD_tag)
+            return expand_cases(word_acc, base, opencorpora_tag, universalD_tag), lookup_words
         else:
-            return [[word_acc, base, opencorpora_tag, universalD_tag]]
+            return [[word_acc, base, opencorpora_tag, universalD_tag]], lookup_words
 
     if template_name == 'conj ru':
         opencorpora_tag['pos'] = 'CONJ'
@@ -544,7 +579,7 @@ def parse_template(word_acc, template):
         base = get_word_from_slogi(template)[0].replace('́', '')
 
         assert base is not None
-        return [[word_acc, base, opencorpora_tag, universalD_tag]]
+        return [[word_acc, base, opencorpora_tag, universalD_tag]], lookup_words
 
     if 'прил ru' in template_name:
         opencorpora_tag['pos'] = 'ADJF'
@@ -559,11 +594,8 @@ def parse_template(word_acc, template):
             if name == 'тип':
                 if value is None: continue
                 if value == 'качественное':
-                    if 'pos-grammeme' in opencorpora_tag:
-                        opencorpora_tag['grammeme'] += ',' + r_degree_opencorpora.get(value)
-                    else:
-                        opencorpora_tag['pos-grammeme'] = r_degree_opencorpora.get(value)
-                    universalD_tag['tag']['Degree'] = r_degree_univarsalD.get(value)
+                    opencorpora_tag['pos-grammeme'].add(r_degree_opencorpora.get(value))
+                    universalD_tag['tag']['Degree'] = r_degree_universalD.get(value)
                     continue
                 if value == 'относительное':
                     continue
@@ -582,7 +614,7 @@ def parse_template(word_acc, template):
         table = table_to_2d(BeautifulSoup(parsed.string.replace('<br>','\n'), 'lxml').table)
         variants = parse_table_declension(table, base, opencorpora_tag, universalD_tag)
 
-        return variants
+        return variants, lookup_words
 
     if template_name == 'сущ-ru':
         opencorpora_tag['pos'] = 'NOUN'
@@ -606,7 +638,7 @@ def parse_template(word_acc, template):
 
                     if d in r_anim_opencorpora:
                         opencorpora_tag['tag']['Animacy'] = r_anim_opencorpora.get(d)
-                        universalD_tag['tag']['Animacy'] = r_anim_univarsalD.get(d)
+                        universalD_tag['tag']['Animacy'] = r_anim_universalD.get(d)
                         continue
                 continue
 
@@ -638,7 +670,7 @@ def parse_template(word_acc, template):
                 variants.append([words, base, opencorpora_tag_copy, universalD_tag_copy])
 
         assert base is not None
-        return variants
+        return variants, lookup_words
 
     if 'сущ ru' in template_name:
         opencorpora_tag['pos'] = 'NOUN'
@@ -657,7 +689,7 @@ def parse_template(word_acc, template):
 
             if d in r_anim_opencorpora:
                 opencorpora_tag['tag']['Animacy'] = r_anim_opencorpora.get(d)
-                universalD_tag['tag']['Animacy'] = r_anim_univarsalD.get(d)
+                universalD_tag['tag']['Animacy'] = r_anim_universalD.get(d)
                 continue
 
             print(template_name, d)
@@ -697,12 +729,12 @@ def parse_template(word_acc, template):
                 variants.append([words, base, opencorpora_tag_copy, universalD_tag_copy])
 
         assert base is not None
-        return variants
+        return variants, lookup_words
 
     if 'Фам ru' in template_name:
         # Фамилии, скип
         raise Exception()
-        return []
+        return [], lookup_words
 
     if 'гл ru' in template_name:
         opencorpora_tag['pos'] = 'INFN'
@@ -712,19 +744,26 @@ def parse_template(word_acc, template):
         base = get_word_from_slogi(template)[0].replace('́', '')
         assert base is not None
 
+        opencorpora_tag['pos-grammeme'].add('tran') # by default?
+
         for argument in template.arguments:
             name, value = get_name_value(argument)
 
             if name == 'НП':
-                opencorpora_tag['tag']['TRns'] = 'intr' if value == '1' else 'tran'
+                if value == '1':
+                    opencorpora_tag['pos-grammeme'].discard('tran')
+                    opencorpora_tag['pos-grammeme'].add('intr')
+                else:
+                    opencorpora_tag['pos-grammeme'].discard('intr')
+                    opencorpora_tag['pos-grammeme'].add('tran')
                 continue
 
             if name == 'соотв':
                 if value is None:
-                    opencorpora_tag['tag']['ASpc'] = 'perf'
+                    opencorpora_tag['pos-grammeme'].add('perf')
                     universalD_tag['tag']['Aspect'] = 'Perf'
                 else:
-                    opencorpora_tag['tag']['ASpc'] = 'impf'
+                    opencorpora_tag['pos-grammeme'].add('impf')
                     universalD_tag['tag']['Aspect'] = 'Imp'
                 continue
 
@@ -736,30 +775,17 @@ def parse_template(word_acc, template):
         parsed = wtp.parse(get_wikitext_api_expandtemplates(template.string))
         table = parsed.tables[0].data()
         _header = table.pop(0)
-        assert 'настоящее' in _header[1]
-        assert 'прошедшее' in _header[2]
-        assert 'повелительное' in _header[3]
+        tenses = ('настоящее', 'прошедшее', 'повелительное')
+        assert any(x in _header[1] for x in tenses)
+        assert any(x in _header[2] for x in tenses)
+        assert any(x in _header[3] for x in tenses)
 
         for row in table:
             person = re.match(r'\[\[([а-яё.]+)(\||\]\])', row[0]).group(1)
             assert person in r_person_opencorpora
 
             for i in range(3):
-                m = re.fullmatch(r'([́а-яёА-ЯЁ]+)', row[1+i])
-                if m is None: m = re.search(r'>([́а-яёА-ЯЁ]+)<', row[1+i])
-
-                if m is not None:
-                    words = [m.group(1)]
-                else:
-                    if '—' in row[1+i]:
-                        words = None
-                    else:
-                        splits = re.split(split_regex, row[1+i])
-                        if len(splits) > 1:
-                            words = splits
-                        else:
-                            raise Exception
-
+                words = get_words_from_text(row[1 + i])
 
                 if words is not None:
                     opencorpora_tag_copy = copy.deepcopy(opencorpora_tag)
@@ -768,27 +794,70 @@ def parse_template(word_acc, template):
                     opencorpora_tag_copy['tag']['Person'] = r_person_opencorpora[person]
                     universalD_tag_copy['tag']['Person'] = r_person_universalD[person]
 
-                    opencorpora_tag_copy['tag']['Number'] = r_number_opencorpora['ед'] if i == 0 else r_number_opencorpora['мн']
-                    universalD_tag_copy['tag']['Number'] = r_number_universalD['ед'] if i == 0 else r_number_universalD['мн']
+                    opencorpora_tag_copy['tag']['Number'] = r_number_opencorpora[person]
+                    universalD_tag_copy['tag']['Number'] = r_number_universalD[person]
 
-                    variants.append([words, base, opencorpora_tag_copy, universalD_tag_copy])
+                    tense = _header[1 + i]
+
+                    if 'настоящее' in tense:
+                        opencorpora_tag_copy['tag']['Tense'] = r_tense_opencorpora['наст']
+                        universalD_tag_copy['tag']['Tense'] = r_tense_universalD['наст']
+
+                    if 'прошедшее' in tense:
+                        opencorpora_tag_copy['tag']['Tense'] = r_tense_opencorpora['пр']
+                        universalD_tag_copy['tag']['Tense'] = r_tense_universalD['пр']
+
+                    if 'будущее' in tense:
+                        opencorpora_tag_copy['tag']['Tense'] = r_tense_opencorpora['буд']
+                        universalD_tag_copy['tag']['Tense'] = r_tense_universalD['буд']
+
+                    if 'повелительное' in tense:
+                        opencorpora_tag_copy['tag']['Mood'] = r_mood_opencorpora['повелительное']
+                        universalD_tag_copy['tag']['Mood'] = r_mood_universalD['повелительное']
+
+
+                    if len(words) == 3:
+                        genders = re.split(split_regex, row[0])
+                        if len(genders) == 3:
+                            for j in range(3):
+                                gender = re.match(r'\[\[([а-яё.]+)(\||\]\])', genders[j]).group(1)
+                                assert gender in r_gender_opencorpora
+
+                                opencorpora_tag_copy2 = copy.deepcopy(opencorpora_tag_copy)
+                                universalD_tag_copy2 = copy.deepcopy(universalD_tag_copy)
+
+                                opencorpora_tag_copy2['tag']['Gender'] = r_gender_opencorpora[person]
+                                universalD_tag_copy2['tag']['Gender'] = r_gender_universalD[person]
+
+                                variants.append([[words[j]], base, opencorpora_tag_copy2, universalD_tag_copy2])
+
+                    else:
+                        variants.append([words, base, opencorpora_tag_copy, universalD_tag_copy])
+
 
         table = table_to_2d(BeautifulSoup('<table>' + parsed.string.replace('<br>', '\n') + '</table>', 'lxml').table)
 
         for row in table:
             if 'причастие' in row[0]:
-                tense = 'наст' if 'настоящего' in row[0] else 'пр'
+                tense = None
+                if any(x in row[0] for x in PRESENT): tense = 'наст'
+                if any(x in row[0] for x in PAST): tense = 'пр'
+                assert tense is not None
 
                 opencorpora_tag_copy = copy.deepcopy(opencorpora_tag)
                 universalD_tag_copy = copy.deepcopy(universalD_tag)
 
                 opencorpora_tag_copy['pos'] = 'PRTF'
+                universalD_tag_copy['VerbForm'] = 'Part'
 
                 opencorpora_tag_copy['tag']['Tense'] = r_tense_opencorpora[tense]
                 universalD_tag_copy['tag']['Tense'] = r_tense_universalD[tense]
 
             if 'деепричастие' in row[0]:
-                tense = 'наст' if 'настоящего' in row[0] else 'пр'
+                tense = None
+                if any(x in row[0] for x in PRESENT): tense = 'наст'
+                if any(x in row[0] for x in PAST): tense = 'пр'
+                assert tense is not None
 
                 opencorpora_tag_copy = copy.deepcopy(opencorpora_tag)
                 universalD_tag_copy = copy.deepcopy(universalD_tag)
@@ -812,13 +881,13 @@ def parse_template(word_acc, template):
 
             words = []
             for w in re.split(split_regex, row[1]):
-                m = re.search(r'\|([́а-яёА-ЯЁ]+)\]\]', w)
+                m = re.search(r'\|?([́а-яёА-ЯЁ]+)\]\]', w)
                 if m is None: m = re.fullmatch(r'([́а-яёА-ЯЁ]+)', w)
                 words.append(m.group(1))
 
             variants.append([words, base, opencorpora_tag_copy, universalD_tag_copy])
 
-        return variants
+        return variants, lookup_words
 
     if 'мест ru' in template_name:
         pos_found = False
@@ -829,8 +898,14 @@ def parse_template(word_acc, template):
             if name == 'часть речи':
                 if value == 'Местоимение (определительное)':
                     opencorpora_tag['pos'] = 'ADJF'
-                    opencorpora_tag['pos-grammeme'] = 'Apro'
+                    opencorpora_tag['pos-grammeme'].add('Apro')
                     universalD_tag['pos'] = 'DET'
+                    pos_found = True
+
+                if value == 'Прилагательное (относительное, притяжательное)':
+                    opencorpora_tag['pos'] = 'ADJF'
+                    opencorpora_tag['pos-grammeme'].add('Poss')
+                    universalD_tag['pos'] = 'ADJ'
                     pos_found = True
 
         assert pos_found
@@ -844,4 +919,72 @@ def parse_template(word_acc, template):
 
         variants = parse_table_declension(table, base, opencorpora_tag, universalD_tag)
 
-        return variants
+        return variants, lookup_words
+
+    if template_name == 'adv ru':
+        opencorpora_tag['pos'] = 'ADVB'
+        universalD_tag['pos'] = 'ADV'
+
+        base = get_word_from_slogi(template)[0].replace('́', '')
+        assert base is not None
+
+        for argument in template.arguments:
+            name, value = get_name_value(argument)
+
+            if name == 'м':
+                raise NotImplemented()
+
+            if name == 'класс' and value is not None:
+                raise NotImplemented()
+
+            if name == 'тип' and value is not None:
+                raise NotImplemented()
+
+            if name == 'степень' and value is not None:
+                raise NotImplemented()
+
+            if name == 'или' and value is not None:
+                raise NotImplemented()
+
+            if name == 'или-кат' and value is not None:
+                raise NotImplemented()
+
+            if name == 'или1' and value is not None:
+                raise NotImplemented()
+
+            if name == 'или-кат1' and value is not None:
+                raise NotImplemented()
+
+            if name == 'или2' and value is not None:
+                raise NotImplemented()
+
+            if name == 'или-кат2' and value is not None:
+                raise NotImplemented()
+
+        return [[word_acc, base, opencorpora_tag, universalD_tag]], lookup_words
+
+    if 'прич ru' in template_name:
+        opencorpora_tag['pos'] = 'PRTF'
+        universalD_tag['pos'] = 'VERB'
+        universalD_tag['VerbForm'] = 'Part'
+
+        base = get_word_from_slogi(template)[0].replace('́', '')
+        assert base is not None
+
+        tense = None
+
+        for argument in template.arguments:
+            name, value = get_name_value(argument)
+
+            if name == 'залог':
+                raise NotImplemented()
+
+            if name == 'вид' and value is not None:
+                raise NotImplemented()
+
+            if name == 'время':
+                raise NotImplemented()
+
+
+
+        return [[word_acc, base, opencorpora_tag, universalD_tag]], lookup_words
