@@ -97,7 +97,7 @@ def get_wikitext_api(word, language='ru'):
         new_word = re.search('\[\[([́а-яёА-ЯЁ]+)\]\]', data).group(1)
         return get_wikitext_api(new_word, language)
 
-    return data
+    return data, word
 
 def get_wikitext_api_expandtemplates(text, language='ru'):
     resp = get('https://{}.wiktionary.org/w/api.php'.format(language), {
@@ -310,6 +310,7 @@ def get_pos_from_template_name(template,):
 
 def get_variants_from_section(section):
     variants = []
+    lookup_words = []
     word_acc = None
 
 
@@ -358,29 +359,45 @@ def get_variants_from_section(section):
     for template in section.templates:
         if known_template(template):
             found_templates = True
-            variants += parse_template(word_acc, template)
+            result = parse_template(word_acc, template)
+            variants += result[0]
+            lookup_words += result[1]
 
     if not found_templates:
         raise Exception
 
-    return variants
+    if 'омоформ' in section.contents:
+        for link in section.wikilinks:
+            lookup_words.append(link.target)
 
+    return variants, lookup_words
 
 def parse_wikt_ru(word, parsed=None):
-    if parsed is None: parsed = wtp.parse(get_wikitext_api(word))
+    if parsed is None:
+        wikitext, word = get_wikitext_api(word)
+        parsed = wtp.parse(wikitext)
 
     variants = []
+    lookup_words = []
 
     for cur_section in parsed.sections:
         if len(cur_section.templates) > 0 and '-ru-' in cur_section.templates[0].name:
             for section in cur_section.sections:
                 if len(section.templates) > 0 and (section.templates[0].name == 'заголовок' or section.templates[0].name == 'з'):
-                    variants += get_variants_from_section(section)
+                    v, l = get_variants_from_section(section)
+                    variants += v
+                    lookup_words += l
 
             if len(variants) == 0:
                 for section in cur_section.sections:
                     if section.title == ' Морфологические и синтаксические свойства ':
-                        variants += get_variants_from_section(section)
+                        v, l = get_variants_from_section(section)
+                        variants += v
+                        lookup_words += l
+
+    for word_lu in lookup_words:
+        print('lookup word', word_lu)
+        variants += parse_wikt_ru(word_lu)
 
     return variants
 

@@ -129,7 +129,7 @@ class AccentDictionary:
                     self.changed = True
                     print('new unresolvable homograph pos', word[:pos + 1] + '́' + word[pos + 1:], self.homographs_unresolvable[word][MORPHS][morph])
                 else:
-                    print('unresolvable homograph exists', word[:pos + 1] + '́' + word[pos + 1:])
+                    print('unresolvable homograph exists', word[:pos + 1] + '́' + word[pos + 1:], self.homographs_unresolvable[word][POS_SET])
             else:
                 self.homographs_unresolvable[word][POS_SET].add(pos)
                 self.homographs_unresolvable[word][MORPHS][morph] = set([pos])
@@ -161,9 +161,9 @@ class AccentDictionary:
             print('homograph moved to unresolvable', word)
 
 bad_words_h = ['автозаводска', 'автозаводско', 'автозаводски']
-skip_words = ['асессоров']
+skip_words = ['асессоров', 'поатласнее', 'поатласней', 'багрящая', 'багрящее', 'багрящие', 'багрящего']
 not_found_words_h = []
-prefixes = ['авто', 'агит']
+prefixes = ['авто', 'агит', 'по']
 
 if __name__ == "__main__":
     dictionary = AccentDictionary()
@@ -175,7 +175,7 @@ if __name__ == "__main__":
 
     for word in dictionary.homographs_old:
         if skip:
-            if word == 'атласный':
+            if word == 'багрящего':
                 skip = False
             else:
                 continue
@@ -189,8 +189,8 @@ if __name__ == "__main__":
 
         if len(variants) == 0:
             if not(word in dictionary.homographs or word in dictionary.homographs_unresolvable or word in bad_words_h or word in not_found_words_h):
-                parse = morpher.parse(word)
-                normal_word = parse[0].normal_form
+                parse = morpher.parse(word)[0]
+                normal_word = parse.normal_form
                 print('normal_form', normal_word, word)
                 variants = parse_wikt_ru(normal_word)
 
@@ -203,8 +203,14 @@ if __name__ == "__main__":
                             break
                     if fl: break
 
+                if not fl and parse.tag.POS == 'PRTF':
+                    # no variants for prtf in 'прич ru'
+                    print('Not found, continue', word)
+                    continue
+
                 if not fl:
                     match = re.match(r'|'.join(prefixes), word)
+                    variants = []
 
                     if match:
                         prefix = match.group()
@@ -212,23 +218,26 @@ if __name__ == "__main__":
                         print('приставка', prefix, word)
                         variants = parse_wikt_ru(word)
 
-                    if len(variants) == 0:
-                        parse = morpher.parse(word)
-                        normal_word = parse[0].normal_form
-                        print('normal_form', normal_word, word)
-                        variants = parse_wikt_ru(normal_word)
+                        if len(variants) == 0:
+                            parse = morpher.parse(word)
+                            normal_word = parse[0].normal_form
+                            print('normal_form', normal_word, word)
+                            variants = parse_wikt_ru(normal_word)
 
-                        fl = False
+                            fl = False
 
-                        for variant in variants:
-                            for word_var in variant[0]:
-                                if word_var.replace('́', '') == word:
-                                    fl = True
-                                    break
+                            for variant in variants:
+                                for word_var in variant[0]:
+                                    if word_var.replace('́', '') == word:
+                                        fl = True
+                                        break
 
-                        if not fl:
-                            print('Not found', word)
-                            raise Exception()
+                            if not fl:
+                                print('Not found', word)
+                                raise Exception()
+                    else:
+                        print('Not found', word)
+                        raise Exception()
 
 
             else:

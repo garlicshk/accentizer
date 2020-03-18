@@ -9,12 +9,12 @@ predictor = RNNMorphPredictor(language="ru")
 
 morpher = pymorphy2.MorphAnalyzer()
 
-parse = morpher.parse('автозаводской')
+parse = morpher.parse('багрящий')
 
 # parse = [convert_pymorph_tag(x) for x in parse]
 
 pprint(parse)
 
-parse2 = predictor.predict(['автозаводской', ])
+parse2 = predictor.predict(['багрящий', ])
 
 pprint(parse2)
